@@ -66,6 +66,9 @@ document.addEventListener("DOMContentLoaded", function () {
         dropdown.addEventListener("change", function () {
             selectedLayers[key] = this.value;
             updateMap();
+            updateMap();
+            updateMap();
+            updateMap();
         });
     });
 
