@@ -11,6 +11,12 @@ document.addEventListener("DOMContentLoaded", function () {
     let map, districtLayer, overlayLayers = {};
 
     // Initialize Map
+    function name(params) {
+        console.log("eror");
+
+    }
+
+    name();
     function initMap() {
         map = new ol.Map({
             target: 'map',
