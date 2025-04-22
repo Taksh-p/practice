@@ -1,25 +1,7 @@
 async function basiclayersNew(layers_b, printwkt1, uploadedFeatures) {
     $('#printwkt').val(printwkt1);
 
-    // Helper: Split LINESTRING into MULTILINESTRING chunks
-    function splitLineStringToMultiLineChunks(wkt, chunkSize = 20) {
-        const matches = wkt.match(/LINESTRING\s*\(([^)]+)\)/i);
-        if (!matches || matches.length < 2) return [];
-
-        const coords = matches[1].split(',').map(coord => coord.trim());
-        const chunks = [];
-
-        for (let i = 0; i < coords.length - 1; i += chunkSize) {
-            const subLine = coords.slice(i, i + chunkSize + 1);
-            if (subLine.length > 1) {
-                chunks.push(`(${subLine.join(', ')})`);
-            }
-        }
-
-        return chunks.map(chunk => `MULTILINESTRING (${chunk})`);
-    }
-
-    // Length calculation
+    // Calculate length
     let totalLength = 0;
     if (printwkt1) {
         let wktFeature = new ol.format.WKT().readFeature(printwkt1, {
@@ -43,7 +25,6 @@ async function basiclayersNew(layers_b, printwkt1, uploadedFeatures) {
         uploadedFeatures.forEach(feature => {
             let geometry = feature.getGeometry();
             let projected = geometry.clone().transform('EPSG:4326', 'EPSG:3857');
-
             if (projected instanceof ol.geom.LineString) {
                 totalLength += projected.getLength();
             } else if (projected instanceof ol.geom.MultiLineString) {
@@ -59,7 +40,7 @@ async function basiclayersNew(layers_b, printwkt1, uploadedFeatures) {
         $("#roadlength").html((lengthInKilometers / 1000).toFixed(2) + ' km');
     }
 
-    // Add basic layers
+    // Add base layers
     for (let i = 0; i < layers_b.length; i++) {
         geomintersectlayer[i] = new ol.layer.Tile({
             source: new ol.source.TileWMS({
@@ -79,81 +60,54 @@ async function basiclayersNew(layers_b, printwkt1, uploadedFeatures) {
         map.addLayer(geomintersectlayer[i]);
     }
 
-    // INTERSECTS logic for large WKT
-    let chunks = splitLineStringToMultiLineChunks(printwkt1);
+    // Prepare land data
     let land_data = JSON.parse($("#landTable").val());
     layers_inter.push(...land_data);
 
-    for (let chunk of chunks) {
-        let inter_layer = `INTERSECTS(geom, ${chunk})`;
-
-        for (let i = 0; i < layers_inter.length; i++) {
-            let layerParams = {
-                'LAYERS': layers_inter[i],
-                version: '1.1.1',
-                format_options: 'dpi:110',
-                CQL_FILTER: inter_layer
-            };
-
-            if (inter_style && inter_style[i]) {
-                layerParams.STYLES = inter_style[i];
-            }
-
-            let distLayer = new ol.layer.Tile({
-                source: new ol.source.TileWMS({
-                    url: contextPath + mapwmsurl71,
-                    crossOrigin: 'anonymous',
-                    params: layerParams
-                }),
-                showLegend: true
-            });
-
-            map.addLayer(distLayer);
-        }
-    }
-
-    // DWITHIN logic
-    let dwithin_layer = `DWITHIN(geom, ${printwkt1}, 1, kilometers)`;
-    for (let i = 0; i < layers_dwith.length; i++) {
-        let dwithParams = {
-            'LAYERS': layers_dwith[i],
-            version: '1.1.1',
-            format_options: 'dpi:110',
-            CQL_FILTER: dwithin_layer
-        };
-
-        if (dwith_style && dwith_style[i]) {
-            dwithParams.STYLES = dwith_style[i];
-        }
-
-        let dwithLayer = new ol.layer.Tile({
-            source: new ol.source.TileWMS({
-                url: contextPath + mapwmsurl71,
-                crossOrigin: 'anonymous',
-                params: dwithParams
-            }),
-            showLegend: true
+    // 🔄 Replace chunking with backend spatial filtering API call
+    try {
+        const response = await fetch(contextPath + '/api/spatial/filter', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                wkt: printwkt1,
+                layersIntersects: layers_inter,
+                layersDwithin: layers_dwith
+            })
         });
 
-        map.addLayer(dwithLayer);
+        const filteredGeometries = await response.json();
 
-        // Draw polygon (if provided)
-        if (polygone_printmp) {
-            let feature = new ol.format.WKT().readFeature(polygone_printmp, {
-                dataProjection: 'EPSG:4326',
-                featureProjection: 'EPSG:3857'
+        for (const [key, wktArray] of Object.entries(filteredGeometries)) {
+            const layerName = key.replace(/^intersects_|^dwithin_/, '');
+            const isIntersect = key.startsWith("intersects_");
+            const styleSet = isIntersect ? inter_style : dwith_style;
+            const layerIndex = isIntersect ? layers_inter.indexOf(layerName) : layers_dwith.indexOf(layerName);
+            const style = styleSet && styleSet[layerIndex];
+
+            const vectorSource = new ol.source.Vector({
+                features: wktArray.map(wkt =>
+                    new ol.format.WKT().readFeature(wkt, {
+                        dataProjection: 'EPSG:4326',
+                        featureProjection: 'EPSG:3857'
+                    })
+                )
             });
 
-            let vectorSource = new ol.source.Vector({ features: [feature] });
-            let vectorLayer = new ol.layer.Vector({
+            const vectorLayer = new ol.layer.Vector({
                 source: vectorSource,
                 style: new ol.style.Style({
-                    stroke: new ol.style.Stroke({ color: 'blue', width: 2 })
+                    stroke: new ol.style.Stroke({
+                        color: isIntersect ? 'blue' : 'green',
+                        width: 3
+                    })
                 })
             });
 
             map.addLayer(vectorLayer);
         }
+    } catch (error) {
+        console.error("Error fetching spatial filtered data:", error);
     }
 
     // Draw uploaded KML features
@@ -214,4 +168,43 @@ async function basiclayersNew(layers_b, printwkt1, uploadedFeatures) {
     }
 
     legendarrayNew();
+}
+
+
+@PostMapping("/api/spatial/filter")
+public ResponseEntity<Map<String, List<String>>> getSpatialFilteredGeometries(
+    @RequestBody SpatialFilterRequest request) {
+    
+    Map<String, List<String>> result = new HashMap<>();
+
+    for (String layer : request.getLayersIntersects()) {
+        List<String> features = spatialService.getIntersectingGeometries(layer, request.getWkt());
+        result.put("intersects_" + layer, features);
+    }
+
+    for (String layer : request.getLayersDwithin()) {
+        List<String> features = spatialService.getDwithinGeometries(layer, request.getWkt(), 1); // 1 km
+        result.put("dwithin_" + layer, features);
+    }
+
+    return ResponseEntity.ok(result);
+}
+
+
+@Data
+public class SpatialFilterRequest {
+    private String wkt;
+    private List<String> layersIntersects;
+    private List<String> layersDwithin;
+}
+
+
+public List<String> getIntersectingGeometries(String table, String wkt) {
+    String sql = "SELECT ST_AsText(geom) FROM " + table + " WHERE ST_Intersects(geom, ST_GeomFromText(?, 4326))";
+    return jdbcTemplate.queryForList(sql, new Object[]{wkt}, String.class);
+}
+
+public List<String> getDwithinGeometries(String table, String wkt, double distanceKm) {
+    String sql = "SELECT ST_AsText(geom) FROM " + table + " WHERE ST_DWithin(geom, ST_GeomFromText(?, 4326), ?, false)";
+    return jdbcTemplate.queryForList(sql, new Object[]{wkt, distanceKm * 1000}, String.class);
 }
