@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic Roads Table</title>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <style>
+        /* Custom style for the footer row */
+        #roadrepoort tfoot tr {
+            background-color: #ff1d1d;
+            /* Red background */
+            font-weight: bold;
+            color: white;
+            /* White text */
+            border-top: 2px solid #b30000;
+        }
+
+        #roadrepoort tfoot th {
+            padding: 10px;
+            text-align: left;
+        }
+
+        #roadrepoort tfoot th:last-child {
+            color: white;
+            /* Keep it white like the rest */
+        }
+    </style>
+
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+</head>
+
+<body>
+
+    <h2>Roads Table</h2>
+
+    <table id="roadrepoort" class="display" style="width:100%"></table>
+
+    <script>
+        $(document).ready(function () {
+            const pageSize = 10;
+            const currentPage = 1;
+
+            const customColumns = [
+                { title: "Id", data: "id" },
+                { title: "Name", data: "name" },
+                { title: "Type", data: "type" },
+                { title: "Lane", data: "lane" }
+            ];
+
+            function loadData(page) {
+                $.ajax({
+                    url: `http://localhost:9090/api/roads?page=${page}&size=${pageSize}`,
+                    method: 'GET',
+                    success: function (response) {
+                        const data = response.data;
+                        if (!data || data.length === 0) return;
+
+                        const laneTotal = data.reduce((sum, row) => sum + (parseInt(row.lane) || 0), 0);
+
+                        let thead = '<thead><tr>';
+                        customColumns.forEach(col => {
+                            thead += `<th>${col.title}</th>`;
+                        });
+                        thead += '</tr></thead>';
+
+                        let tfoot = '<tfoot><tr>';
+                        tfoot += '<th colspan="2">Total Lane:</th>';
+                        for (let i = 2; i < customColumns.length; i++) {
+                            if (customColumns[i].data === 'lane') {
+                                tfoot += `<th>${laneTotal}</th>`;
+                            } else {
+                                tfoot += '<th></th>';
+                            }
+                        }
+                        tfoot += '</tr></tfoot>';
+
+                        $('#roadrepoort').html(thead + '<tbody></tbody>' + tfoot);
+
+                        $('#roadrepoort').DataTable({
+                            data: data,
+                            columns: customColumns,
+                            searching: false,
+                            paging: false,
+                            info: false,
+                            destroy: true
+                        });
+                    }
+                });
+            }
+
+            loadData(currentPage);
+        });
+    </script>
+
+</body>
+
+</html>
+
+<!-- 
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic Roads Table</title>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <style>
+        /* Custom style for the footer row */
+        #roadrepoort tfoot tr {
+            background-color: #ff1d1d;
+            /* Red background */
+            font-weight: bold;
+            color: white;
+            /* White text */
+            border-top: 2px solid #b30000;
+        }
+
+        #roadrepoort tfoot th {
+            padding: 10px;
+            text-align: left;
+        }
+
+        #roadrepoort tfoot th:last-child {
+            color: white;
+            /* Keep it white like the rest */
+        }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+</head>
+
+<body>
+
+    <h2>Roads Table</h2>
+
+    <table id="roadrepoort" class="display" style="width:100%">
+        <thead>
+            <tr>
+                <th>Id</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Lane</th>
+            </tr>
+        </thead>
+</table>
+
+<script>
+    $(document).ready(function () {
+        const pageSize = 10;
+        const currentPage = 1;
+
+        const customColumns = [
+            { title: "Id", data: "id" },
+            { title: "Name", data: "name" },
+            { title: "Type", data: "type" },
+            { title: "Lane", data: "lane" }
+        ];
+
+        function loadData(page) {
+            $.ajax({
+                url: `http://localhost:9090/api/roads?page=${page}&size=${pageSize}`,
+                method: 'GET',
+                success: function (response) {
+                    const data = response.data;
+                    if (!data || data.length === 0) return;
+
+                    // Dynamically create the footer if it doesn't exist yet
+                    if ($('#roadrepoort tfoot').length === 0) {
+                        $('#roadrepoort').append('<tfoot><tr><th colspan="3">Total Lane:</th><th></th></tr></tfoot>');
+                    }
+
+                    // Initialize DataTable
+                    const table = $('#roadrepoort').DataTable({
+                        data: data,
+                        columns: customColumns,
+                        searching: false,
+                        paging: false,
+                        info: false,
+                        destroy: true, // allow reinitialization
+                        footerCallback: function (row, data, start, end, display) {
+                            // Calculate the total of 'lane' column
+                            const laneTotal = data.reduce((sum, row) => sum + (parseInt(row.lane) || 0), 0);
+
+                            console.log("laneTotal", laneTotal); // Check if the value is correct in the console
+
+                            // Update the footer with the total value in the 'Lane' column
+                            $(this.api().column(3).footer()).html(laneTotal); // Column 3 is 'Lane'
+                        }
+                    });
+                }
+            });
+        }
+
+        loadData(currentPage);
+    });
+</script>
+
+</body>
+
+</html> -->
